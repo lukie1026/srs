@@ -266,6 +266,64 @@ void SrsHttpHooks::on_stop(string url, SrsRequest* req)
     return;
 }
 
+srs_error_t SrsHttpHooks::on_pull(string url, SrsRequest* req, string& resp)
+{
+    srs_error_t err = srs_success;
+    
+    SrsContextId cid = _srs_context->get_id();
+    
+    SrsStatistic* stat = SrsStatistic::instance();
+
+    SrsJsonObject* obj = SrsJsonAny::object();
+    SrsAutoFree(SrsJsonObject, obj);
+    
+    obj->set("server_id", SrsJsonAny::str(stat->server_id().c_str()));
+    obj->set("action", SrsJsonAny::str("on_pull"));
+    obj->set("client_id", SrsJsonAny::str(cid.c_str()));
+    obj->set("ip", SrsJsonAny::str(req->ip.c_str()));
+    obj->set("vhost", SrsJsonAny::str(req->vhost.c_str()));
+    obj->set("app", SrsJsonAny::str(req->app.c_str()));
+    obj->set("stream", SrsJsonAny::str(req->stream.c_str()));
+    obj->set("param", SrsJsonAny::str(req->param.c_str()));
+    
+    std::string data = obj->dumps();
+    std::string res;
+    int status_code;
+    
+    SrsHttpClient http;
+    if ((err = do_post(&http, url, data, status_code, res)) != srs_success) {
+        return srs_error_wrap(err, "http post on_pull uri failed, client_id=%s, url=%s, request=%s, response=%s, code=%d",
+            cid.c_str(), url.c_str(), data.c_str(), res.c_str(), status_code);
+    }
+
+    // parse string res to json.
+    SrsJsonAny* info = SrsJsonAny::loads(res);
+    if (!info) {
+        return srs_error_new(ERROR_HTTP_DATA_INVALID, "http: not json %s", res.c_str());
+    }
+    SrsAutoFree(SrsJsonAny, info);
+    
+    // response standard object, format in json: {"code": 0, "data": {"addr":"x.x.x.x:x"}}
+    SrsJsonObject* res_info = info->to_object();
+    SrsJsonAny* res_data = NULL;
+    SrsJsonAny* res_addr = NULL;
+    if ((res_data = res_info->ensure_property_object("data")) == NULL) {
+        return srs_error_new(ERROR_RESPONSE_CODE, "http: response object no data %s", res.c_str());
+    }
+    if ((res_addr = res_data->to_object()->ensure_property_string("addr")) == NULL) {
+        return srs_error_new(ERROR_RESPONSE_CODE, "http: response object no addr %s", res.c_str());
+    }
+    if (!res_addr->is_string()) {
+        return srs_error_new(ERROR_RESPONSE_CODE, "http: response object addr is not string %s", res.c_str());
+    }
+    resp = res_addr->to_str();
+    
+    srs_trace("http: on_pull ok, client_id=%s, url=%s, request=%s, response=%s",
+        cid.c_str(), url.c_str(), data.c_str(), res.c_str());
+    
+    return err;
+}
+
 srs_error_t SrsHttpHooks::on_dvr(SrsContextId c, string url, SrsRequest* req, string file)
 {
     srs_error_t err = srs_success;

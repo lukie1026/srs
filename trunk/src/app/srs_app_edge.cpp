@@ -29,6 +29,7 @@ using namespace std;
 #include <srs_kernel_utility.hpp>
 #include <srs_kernel_balance.hpp>
 #include <srs_app_rtmp_conn.hpp>
+#include <srs_app_http_hooks.hpp>
 
 // when edge timeout, retry next.
 #define SRS_EDGE_INGESTER_TIMEOUT (5 * SRS_UTIME_SECONDS)
@@ -64,21 +65,38 @@ srs_error_t SrsEdgeRtmpUpstream::connect(SrsRequest* r, SrsLbRoundRobin* lb)
     
     std::string url;
     if (true) {
-        SrsConfDirective* conf = _srs_config->get_vhost_edge_origin(req->vhost);
-        
+        std::string server;
+        int port = 0;
+
+        SrsConfDirective* pull_conf = _srs_config->get_vhost_on_pull(req->vhost);
+        SrsConfDirective* origin_conf = _srs_config->get_vhost_edge_origin(req->vhost);
+
+        // select the origin.
+        if (origin_conf) {
+            server = lb->select(origin_conf->args);
+            port = SRS_CONSTS_RTMP_DEFAULT_PORT;
+            srs_parse_hostport(server, server, port);
+        }
+
+        // override the origin info by on_pull data
+        if (pull_conf) {
+            vector<string> hooks = pull_conf->args;
+            std::string url = hooks.at(0);
+            std::string resp;
+            if ((err = SrsHttpHooks::on_pull(url, req, resp)) != srs_success) {
+                return srs_error_wrap(err, "rtmp on_pull %s", url.c_str());
+            }
+            srs_parse_hostport(resp, server, port);
+        }
+
         // @see https://github.com/ossrs/srs/issues/79
         // when origin is error, for instance, server is shutdown,
         // then user remove the vhost then reload, the conf is empty.
-        if (!conf) {
+        if (port == 0) {
             return srs_error_new(ERROR_EDGE_VHOST_REMOVED, "vhost %s removed", req->vhost.c_str());
         }
         
-        // select the origin.
-        std::string server = lb->select(conf->args);
-        int port = SRS_CONSTS_RTMP_DEFAULT_PORT;
-        srs_parse_hostport(server, server, port);
-        
-        // override the origin info by redirect.
+        // override the pull and origin info by redirect.
         if (!redirect.empty()) {
             int _port;
             string _schema, _vhost, _app, _stream, _param, _host;

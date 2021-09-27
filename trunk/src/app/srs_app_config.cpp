@@ -2618,6 +2618,8 @@ srs_error_t SrsConfig::vhost_to_json(SrsConfDirective* vhost, SrsJsonObject* obj
                 http_hooks->set("on_play", sdir->dumps_args());
             } else if (sdir->name == "on_stop") {
                 http_hooks->set("on_stop", sdir->dumps_args());
+            } else if (sdir->name == "on_pull") {
+                http_hooks->set("on_pull", sdir->dumps_args());
             } else if (sdir->name == "on_dvr") {
                 http_hooks->set("on_dvr", sdir->dumps_args());
             } else if (sdir->name == "on_hls") {
@@ -3847,7 +3849,7 @@ srs_error_t SrsConfig::check_normal_config()
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
                     string m = conf->at(j)->name;
                     if (m != "enabled" && m != "on_connect" && m != "on_close" && m != "on_publish"
-                        && m != "on_unpublish" && m != "on_play" && m != "on_stop"
+                        && m != "on_unpublish" && m != "on_play" && m != "on_stop" && m != "on_pull"
                         && m != "on_dvr" && m != "on_hls" && m != "on_hls_notify") {
                         return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal vhost.http_hooks.%s of %s", m.c_str(), vhost->arg0().c_str());
                     }
@@ -5734,6 +5736,16 @@ SrsConfDirective* SrsConfig::get_vhost_on_stop(string vhost)
     }
     
     return conf->get("on_stop");
+}
+
+SrsConfDirective* SrsConfig::get_vhost_on_pull(string vhost)
+{
+    SrsConfDirective* conf = get_vhost_http_hooks(vhost);
+    if (!conf) {
+        return NULL;
+    }
+    
+    return conf->get("on_pull");
 }
 
 SrsConfDirective* SrsConfig::get_vhost_on_dvr(string vhost)
